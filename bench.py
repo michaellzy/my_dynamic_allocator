@@ -187,14 +187,15 @@ def run_benchmark(path: str, invocations: int, cwd: Path):
             print(f"{bcolors.FAIL}FAIL{bcolors.ENDC}", flush=True)
         else:
             print(f"{bcolors.WARNING}TIMEOUT{bcolors.ENDC}", flush=True)
-    mean, err = calc_mean_with_ci(times)
     print(f"{bcolors.OKCYAN}Finished execution of {bcolors.ENDC}{bcolors.OKCYAN}{bcolors.BOLD}{len(times)}{bcolors.ENDC} {bcolors.OKCYAN}/{bcolors.ENDC} {bcolors.OKCYAN}{bcolors.BOLD}{invocations}{bcolors.ENDC} {bcolors.OKCYAN}invocations.{bcolors.ENDC}", flush=True)
     if len(times) == 0:
         pass
     elif len(times) == 1:
+        mean, err = calc_mean_with_ci(times)
         print(
             f"{bcolors.OKGREEN}Time: {bcolors.BOLD}{mean:.3f}s{bcolors.ENDC}", flush=True)
     else:
+        mean, err = calc_mean_with_ci(times)
         print(f"{bcolors.OKGREEN}Average Time: {bcolors.BOLD}{mean:.3f}s ±{err:.3f}{bcolors.ENDC}", flush=True)
 
 
@@ -213,11 +214,11 @@ def main():
     check_make(build_cmd, output, exit_code)
     # Build benchmarks
     output, exit_code = make(
-        f"bench/glibc-malloc-bench-simple " + build_cmd, script_path)
-    check_make(f"tests/glibc-malloc-bench-simple", output, exit_code)
+        f"bench " + build_cmd, script_path)
+    check_make(f"bench", output, exit_code)
     # Run
     run_benchmark(
-        f"{script_path}/bench/glibc-malloc-bench-simple", args.invocations, script_path)
+        f"{script_path}/bench/benchmark", args.invocations, script_path)
 
 
 class bcolors:
@@ -233,3 +234,4 @@ class bcolors:
 
 if __name__ == "__main__":
     main()
+
