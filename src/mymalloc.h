@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <errno.h>
+#include <string.h>
 #include <sys/mman.h>
 
 #ifdef ENABLE_LOG
