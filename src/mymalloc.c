@@ -12,9 +12,11 @@ const size_t kMaxAllocationSize = (128ull << 20) - kMetadataSize;
 // Memory size that is mmapped (64 MB)
 const size_t kMemorySize = (64ull << 20);
 
-const size_t kMaxAvailableSize = kMaxAllocationSize - kMetadataSize; 
+const size_t kAvailableSize = kMemorySize - 2 * kMetadataSize;
 
 Block *fencepost_start = NULL, *fencepost_end = NULL;
+Block *free_list_start = NULL;
+
 
 inline static size_t round_up(size_t size, size_t alignment) {
   const size_t mask = alignment - 1;
@@ -23,34 +25,40 @@ inline static size_t round_up(size_t size, size_t alignment) {
 
 
 void initialize_memory() {
+
   fencepost_start = mmap(NULL, kMemorySize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
   if (fencepost_start == MAP_FAILED) {
     fprintf(stderr, "mmap failed with error: %s\n", strerror(errno));
-    return NULL;
+    exit(1);
   }
   fencepost_start->allocated = 1;
+  fencepost_start->next = NULL;
   fencepost_start->prev = NULL;
   fencepost_start->size = 0;
 
-  Block *start_block = ADD_BYTES(fencepost_start, kMetadataSize);
-  start_block->allocated = 0;
-  start_block->size = kMemorySize - 2 * kMetadataSize;
-  start_block->prev = fencepost_start;
-  fencepost_start->next = start_block;
+  free_list_start = ADD_BYTES(fencepost_start, kMetadataSize);
+  free_list_start->allocated = 0;
+  free_list_start->size = kAvailableSize;
+  free_list_start->next = NULL;
+  free_list_start->prev = fencepost_start;
 
-  fencepost_end = ADD_BYTES(start_block, start_block->size);
+
+  fencepost_end = ADD_BYTES(free_list_start, free_list_start->size);
   fencepost_end->size = 0;
   fencepost_end->allocated = 1;
   fencepost_end->next = NULL;
-  fencepost_end->prev = start_block;
-  start_block->next = fencepost_end;
+  fencepost_end->prev = free_list_start;
+
+  fencepost_start->next = free_list_start;
+  free_list_start->next = fencepost_end;
 }
 
-Block* find_free_block(size_t size) {
-  Block *start, *best;
-  start = get_start_block();
-  size_t best_fit = __SIZE_MAX__;
-  while (start != fencepost_end) {
+Block *find_free_block(size_t size) {
+  Block *start = fencepost_start->next;
+  Block *best = NULL;
+  size_t best_fit = kAvailableSize + 1;
+
+  while (start != NULL && start != fencepost_end) {
     if (is_free(start) && block_size(start) >= size) {
       if (block_size(start) < best_fit) {
         best_fit = block_size(start);
@@ -62,6 +70,20 @@ Block* find_free_block(size_t size) {
   return best;
 }
 
+void insert_free_list(Block *block) {
+  block->allocated = 0;
+  Block *next = block->next;
+  fencepost_start->next = block;
+  block->prev = fencepost_start;
+  block->next = next;
+  next->prev = block;
+}
+
+void remove_from_free_list(Block *block) {
+  block->prev->next = block->next;
+  block->next->prev = block->prev;
+}
+
 void *my_malloc(size_t size) {
   if (fencepost_start == NULL) {
     initialize_memory();
@@ -71,12 +93,10 @@ void *my_malloc(size_t size) {
   if (free_block == NULL) {
     return NULL;
   } else {
-    free_block->allocated = 1;
-    free_block->size = alloc_size;
-    Block *prev = free_block->prev;
-    Block *next = free_block->next;
-
+    
   }
+  free_block->allocated = true;
+  free_block->size = alloc_size;
 
   return NULL;
 }
@@ -102,7 +122,7 @@ size_t block_size(Block *block) {
 
 /* Returns the first block in memory (excluding fenceposts) */
 Block *get_start_block(void) {
-  return fencepost_start->next;
+  return free_list_start;
 }
 
 /* Returns the next block in memory */
@@ -110,12 +130,12 @@ Block *get_next_block(Block *block) {
   if (block == NULL) {
     return NULL;
   }
-;
-  if (block->next == fencepost_end) {
+  Block *next_block;
+  next_block = block + block_size(block);
+  if (next_block >= fencepost_end) {
     return NULL;
   }
-  return block->next;
-
+  return next_block;
 }
 
 /* Given a ptr assumed to be returned from a previous call to `my_malloc`,
