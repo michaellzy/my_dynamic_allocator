@@ -80,11 +80,29 @@ void insert_free_list(Block *block) {
 }
 
 void remove_from_free_list(Block *block) {
-  block->prev->next = block->next;
-  block->next->prev = block->prev;
+  if (block != fencepost_start || block != fencepost_end) {
+    block->prev->next = block->next;
+    block->next->prev = block->prev;
+  }
+}
+
+Block *split_block(Block *block, size_t size) {
+  size_t remain_size = block->size - size - kMetadataSize;
+  block->size = remain_size;
+
+  Block* right = get_next_block(block);
+  right->size = size + kMetadataSize;
+  right->allocated = 1;
+  void *payload_ptr = (void*)(right + kMetadataSize);
+  memset(payload_ptr, 0, size);
+  return block;
 }
 
 void *my_malloc(size_t size) {
+
+  if (size == 0 || size > kMaxAllocationSize) {
+    return NULL;
+  }
   if (fencepost_start == NULL) {
     initialize_memory();
   }
@@ -92,13 +110,18 @@ void *my_malloc(size_t size) {
   Block *free_block = find_free_block(alloc_size);
   if (free_block == NULL) {
     return NULL;
-  } else {
-    
+  } else if (free_block->size <= (alloc_size + kMetadataSize + kMinAllocationSize)){
+    remove_from_free_list(free_block);
+    free_block->allocated = 1;
+    free_block->size = size + kMetadataSize;
+    void *payload_ptr = (void*)(free_block + kMetadataSize);
+    memset(payload_ptr, 0, size);
+    return ADD_BYTES(free_block, kMetadataSize);
   }
-  free_block->allocated = true;
-  free_block->size = alloc_size;
+  Block *splitted_free_block = split_block(free_block, size);
+  insert_free_list(splitted_free_block);
 
-  return NULL;
+  return ADD_BYTES(splitted_free_block, kMetadataSize);
 }
 
 void my_free(void *ptr) {
@@ -130,8 +153,8 @@ Block *get_next_block(Block *block) {
   if (block == NULL) {
     return NULL;
   }
-  Block *next_block;
-  next_block = block + block_size(block);
+  
+  Block* next_block = ADD_BYTES(block, block_size(block));
   if (next_block >= fencepost_end) {
     return NULL;
   }
