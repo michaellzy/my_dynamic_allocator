@@ -80,22 +80,55 @@ void insert_free_list(Block *block) {
 }
 
 void remove_from_free_list(Block *block) {
-  if (block != fencepost_start || block != fencepost_end) {
+  if (block != fencepost_start && block != fencepost_end) {
     block->prev->next = block->next;
     block->next->prev = block->prev;
   }
 }
 
-Block *split_block(Block *block, size_t size) {
-  size_t remain_size = block->size - size - kMetadataSize;
-  block->size = remain_size;
 
+
+Block *split_block(Block *block, size_t size) {
+  size_t remain_size = block->size - size;
+  block->size = remain_size;
+  block->allocated = 0;
   Block* right = get_next_block(block);
-  right->size = size + kMetadataSize;
+  right->size = size;
   right->allocated = 1;
-  void *payload_ptr = (void*)(right + kMetadataSize);
+  void *payload_ptr = ADD_BYTES(right, kMetadataSize);
   memset(payload_ptr, 0, size);
   return block;
+}
+
+
+
+void coalesce_adjacent_blocks() {
+    Block *current = fencepost_start->next;
+
+    // Traverse the free list and coalesce adjacent blocks
+    while (current != NULL && current != fencepost_end) {
+        Block *next_block = current->next;
+
+        // Check if the blocks are adjacent in memory
+        if (next_block != NULL && ADD_BYTES(current, current->size) == next_block) {
+            // If both blocks are free, coalesce them
+            if (is_free(current) && is_free(next_block)) {
+                // Merge the two blocks
+                current->size += next_block->size;
+                current->next = next_block->next;
+
+                if (next_block->next != NULL) {
+                    next_block->next->prev = current;
+                }
+
+                // Continue coalescing in case of more adjacent free blocks
+                continue;
+            }
+        }
+
+        // Move to the next block
+        current = next_block;
+    }
 }
 
 void *my_malloc(size_t size) {
@@ -108,24 +141,33 @@ void *my_malloc(size_t size) {
   }
   size_t alloc_size = round_up(size + kMetadataSize, kAlignment);
   Block *free_block = find_free_block(alloc_size);
+  remove_from_free_list(free_block);
   if (free_block == NULL) {
     return NULL;
   } else if (free_block->size <= (alloc_size + kMetadataSize + kMinAllocationSize)){
-    remove_from_free_list(free_block);
+    // remove_from_free_list(free_block);
     free_block->allocated = 1;
-    free_block->size = size + kMetadataSize;
-    void *payload_ptr = (void*)(free_block + kMetadataSize);
+    void *payload_ptr = ADD_BYTES(free_block, kMetadataSize);
     memset(payload_ptr, 0, size);
-    return ADD_BYTES(free_block, kMetadataSize);
+    return payload_ptr;
   }
-  Block *splitted_free_block = split_block(free_block, size);
+  Block *splitted_free_block = split_block(free_block, alloc_size);
   insert_free_list(splitted_free_block);
 
   return ADD_BYTES(splitted_free_block, kMetadataSize);
 }
 
 void my_free(void *ptr) {
-  return;
+  if (ptr == NULL) {
+    return;
+  }
+
+  // Convert the payload pointer back to the metadata pointer
+  Block *block = ptr_to_block(ptr);
+  block->allocated = 0;  // Mark the block as free
+
+  // Coalesce the block with its neighbors if possible
+  coalesce_adjacent_blocks();
 }
 
 /** These are helper functions you are required to implement for internal testing

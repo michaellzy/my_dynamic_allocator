@@ -26,6 +26,7 @@ int main(void) {
 
   for (int i = 0; i < LEN; i++)
     actual_sum += array1[i];
-
+  printf("expected sum: %d\n", expected_sum);
+  printf("actual sum: %d\n", actual_sum);
   return expected_sum - actual_sum;
 }
