@@ -71,8 +71,8 @@ Block *find_free_block(size_t size) {
 }
 
 void insert_free_list(Block *block) {
-  block->allocated = 0;
-  Block *next = block->next;
+  // block->allocated = 0;
+  Block *next = fencepost_start->next;
   fencepost_start->next = block;
   block->prev = fencepost_start;
   block->next = next;
@@ -92,12 +92,25 @@ Block *split_block(Block *block, size_t size) {
   size_t remain_size = block->size - size;
   block->size = remain_size;
   block->allocated = 0;
+  if (remain_size >= kMetadataSize + kMinAllocationSize) {
+    insert_free_list(block);
+    // Block *next = block->next;
+    // fencepost_start->next = block;
+    // block->prev = fencepost_start;
+    // block->next = next;
+    // next->prev = block;
+  } else {
+    block->allocated = 1;
+  }
+
+
+
   Block* right = get_next_block(block);
   right->size = size;
   right->allocated = 1;
   void *payload_ptr = ADD_BYTES(right, kMetadataSize);
   memset(payload_ptr, 0, size);
-  return block;
+  return payload_ptr;
 }
 
 
@@ -151,10 +164,10 @@ void *my_malloc(size_t size) {
     memset(payload_ptr, 0, size);
     return payload_ptr;
   }
-  Block *splitted_free_block = split_block(free_block, alloc_size);
-  insert_free_list(splitted_free_block);
 
-  return ADD_BYTES(splitted_free_block, kMetadataSize);
+  Block *payload = split_block(free_block, alloc_size);
+  
+  return payload;
 }
 
 void my_free(void *ptr) {
@@ -164,10 +177,22 @@ void my_free(void *ptr) {
 
   // Convert the payload pointer back to the metadata pointer
   Block *block = ptr_to_block(ptr);
+
+  if (fencepost_start == NULL || fencepost_end == NULL) {
+    free(ptr);
+    return;
+  }
+
+  
+  if (block <= fencepost_start || block >= fencepost_end || is_free(block) == 1) {
+    return;
+  }
+  
   block->allocated = 0;  // Mark the block as free
+  insert_free_list(block);
 
   // Coalesce the block with its neighbors if possible
-  coalesce_adjacent_blocks();
+  // coalesce_adjacent_blocks();
 }
 
 /** These are helper functions you are required to implement for internal testing
