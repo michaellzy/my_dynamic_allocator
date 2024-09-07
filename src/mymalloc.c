@@ -109,35 +109,6 @@ Block *split_block(Block *block, size_t size) {
 }
 
 
-
-// void coalesce_adjacent_blocks(Block *free_block) {
-//   Block *cur = fencepost_start->next;
-
-//   while (cur != NULL && cur != fencepost_end) {
-//     Block *next_block = get_next_block(cur);
-
-//     // Check if current block is adjacent to free_block
-//     if (cur != free_block && is_free(cur)) {
-//       // Check if cur is directly before free_block
-//       if (ADD_BYTES(cur, block_size(cur)) == free_block) {
-//         // Coalesce cur with free_block
-//         cur->size += free_block->size;
-//         remove_from_free_list(free_block);
-//         free_block = cur;
-//       }
-
-//       // Check if cur is directly after free_block
-//       if (ADD_BYTES(free_block, block_size(free_block)) == cur) {
-//         // Coalesce free_block with cur
-//         free_block->size += cur->size;
-//         remove_from_free_list(cur);
-//       }
-//     }
-
-//     cur = cur->next;
-//   }
-// }
-
 void coalesce_adjacent_blocks(Block *free_block) {
     Block *cur = fencepost_start->next;
 
@@ -162,15 +133,11 @@ void coalesce_adjacent_blocks(Block *free_block) {
         }
 
         // Case 3: Coalesce with both the previous and next blocks
-        if (prev_block != NULL && is_free(prev_block) && next_block != NULL && is_free(next_block)) {
+        if (cur != free_block && prev_block != fencepost_start && is_free(prev_block) && next_block != fencepost_end && is_free(next_block)) {
             // Coalesce prev_block, free_block, and next_block
             prev_block->size += free_block->size + next_block->size;
             remove_from_free_list(free_block);  // Remove free_block
             remove_from_free_list(next_block);  // Remove next_block
-            prev_block->next = next_block->next;  // Adjust pointers
-            if (next_block->next != NULL) {
-                next_block->next->prev = prev_block;
-            }
             free_block = prev_block;  // Coalesced block remains at the left position (prev_block)
         }
 
@@ -198,7 +165,7 @@ void *request_more_memory() {
   insert_free_list(new_block);
 
   // Coalesce the new block with adjacent blocks if possible
-  // coalesce_adjacent_blocks(new_block);
+  coalesce_adjacent_blocks(new_block);
 
   return new_block;
 }
