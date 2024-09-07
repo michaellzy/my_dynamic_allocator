@@ -96,11 +96,6 @@ Block *split_block(Block *block, size_t size) {
   block->allocated = 0;
   if (remain_size >= kMetadataSize + kMinAllocationSize) {
     insert_free_list(block);
-    // Block *next = block->next;
-    // fencepost_start->next = block;
-    // block->prev = fencepost_start;
-    // block->next = next;
-    // next->prev = block;
   } else {
     block->allocated = 1;
   }
@@ -115,47 +110,86 @@ Block *split_block(Block *block, size_t size) {
 
 
 
+// void coalesce_adjacent_blocks(Block *free_block) {
+//   Block *cur = fencepost_start->next;
+
+//   while (cur != NULL && cur != fencepost_end) {
+//     Block *next_block = get_next_block(cur);
+
+//     // Check if current block is adjacent to free_block
+//     if (cur != free_block && is_free(cur)) {
+//       // Check if cur is directly before free_block
+//       if (ADD_BYTES(cur, block_size(cur)) == free_block) {
+//         // Coalesce cur with free_block
+//         cur->size += free_block->size;
+//         remove_from_free_list(free_block);
+//         free_block = cur;
+//       }
+
+//       // Check if cur is directly after free_block
+//       if (ADD_BYTES(free_block, block_size(free_block)) == cur) {
+//         // Coalesce free_block with cur
+//         free_block->size += cur->size;
+//         remove_from_free_list(cur);
+//       }
+//     }
+
+//     cur = cur->next;
+//   }
+// }
+
 void coalesce_adjacent_blocks(Block *free_block) {
-  Block *cur = free_list_start;
+    Block *cur = fencepost_start->next;
 
-  while (cur != NULL && cur != fencepost_end) {
-    Block *next_block = get_next_block(cur);
+    // Iterate through the free list
+    while (cur != NULL && cur != fencepost_end) {
+        Block *next_block = cur->next;
+        Block *prev_block = cur->prev;
 
-    // Check if current block is adjacent to free_block
-    if (cur != free_block && is_free(cur)) {
-      // Check if cur is directly before free_block
-      if (ADD_BYTES(cur, block_size(cur)) == free_block) {
-        // Coalesce cur with free_block
-        cur->size += free_block->size;
-        remove_from_free_list(free_block);
-        free_block = cur;
-      }
+        // Case 1: Coalesce with the previous block (cur is directly before free_block)
+        if (cur != free_block && is_free(cur) && ADD_BYTES(cur, block_size(cur)) == free_block) {
+            // Coalesce cur with free_block
+            cur->size += free_block->size;
+            remove_from_free_list(free_block);  // Remove free_block
+            free_block = cur;  // Update free_block to point to the coalesced block at the left position
+        }
 
-      // Check if cur is directly after free_block
-      if (ADD_BYTES(free_block, block_size(free_block)) == cur) {
-        // Coalesce free_block with cur
-        free_block->size += cur->size;
-        remove_from_free_list(cur);
-      }
+        // Case 2: Coalesce with the next block (cur is directly after free_block)
+        if (cur != free_block && is_free(cur) && ADD_BYTES(free_block, block_size(free_block)) == cur) {
+            // Coalesce free_block with cur
+            free_block->size += cur->size;
+            remove_from_free_list(cur);  // Remove cur from the free list
+        }
+
+        // Case 3: Coalesce with both the previous and next blocks
+        if (prev_block != NULL && is_free(prev_block) && next_block != NULL && is_free(next_block)) {
+            // Coalesce prev_block, free_block, and next_block
+            prev_block->size += free_block->size + next_block->size;
+            remove_from_free_list(free_block);  // Remove free_block
+            remove_from_free_list(next_block);  // Remove next_block
+            prev_block->next = next_block->next;  // Adjust pointers
+            if (next_block->next != NULL) {
+                next_block->next->prev = prev_block;
+            }
+            free_block = prev_block;  // Coalesced block remains at the left position (prev_block)
+        }
+
+        // Move to the next block
+        cur = cur->next;
     }
-
-    cur = cur->next;
-  }
 }
 
-void *request_more_memory(size_t size) {
-  // Round the size to a multiple of the page size for mmap
-  size_t total_size = round_up(size + kMetadataSize, kAlignment);
 
+void *request_more_memory() {
   // Request more memory using mmap
-  Block *new_block = mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+  Block *new_block = mmap(NULL, kMemorySize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
   if (new_block == MAP_FAILED) {
     fprintf(stderr, "mmap failed with error: %s\n", strerror(errno));
     return NULL;
   }
 
   // Set up the new block
-  new_block->size = total_size;
+  new_block->size = kMemorySize;
   new_block->allocated = 0;
   new_block->prev = NULL;
   new_block->next = NULL;
@@ -164,7 +198,7 @@ void *request_more_memory(size_t size) {
   insert_free_list(new_block);
 
   // Coalesce the new block with adjacent blocks if possible
-  coalesce_adjacent_blocks(new_block);
+  // coalesce_adjacent_blocks(new_block);
 
   return new_block;
 }
@@ -182,7 +216,7 @@ void *my_malloc(size_t size) {
   if (free_block == NULL) {
     // return NULL;
     // No suitable free block, request more memory from the kernel
-    free_block = request_more_memory(alloc_size);
+    free_block = request_more_memory();
   } 
 
   remove_from_free_list(free_block);
