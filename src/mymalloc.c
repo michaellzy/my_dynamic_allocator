@@ -53,6 +53,8 @@ void initialize_memory() {
   free_list_start->next = fencepost_end;
 }
 
+
+
 Block *find_free_block(size_t size) {
   Block *start = fencepost_start->next;
   Block *best = NULL;
@@ -103,8 +105,6 @@ Block *split_block(Block *block, size_t size) {
     block->allocated = 1;
   }
 
-
-
   Block* right = get_next_block(block);
   right->size = size;
   right->allocated = 1;
@@ -115,33 +115,58 @@ Block *split_block(Block *block, size_t size) {
 
 
 
-void coalesce_adjacent_blocks() {
-    Block *current = fencepost_start->next;
+void coalesce_adjacent_blocks(Block *free_block) {
+  Block *cur = free_list_start;
 
-    // Traverse the free list and coalesce adjacent blocks
-    while (current != NULL && current != fencepost_end) {
-        Block *next_block = current->next;
+  while (cur != NULL && cur != fencepost_end) {
+    Block *next_block = get_next_block(cur);
 
-        // Check if the blocks are adjacent in memory
-        if (next_block != NULL && ADD_BYTES(current, current->size) == next_block) {
-            // If both blocks are free, coalesce them
-            if (is_free(current) && is_free(next_block)) {
-                // Merge the two blocks
-                current->size += next_block->size;
-                current->next = next_block->next;
+    // Check if current block is adjacent to free_block
+    if (cur != free_block && is_free(cur)) {
+      // Check if cur is directly before free_block
+      if (ADD_BYTES(cur, block_size(cur)) == free_block) {
+        // Coalesce cur with free_block
+        cur->size += free_block->size;
+        remove_from_free_list(free_block);
+        free_block = cur;
+      }
 
-                if (next_block->next != NULL) {
-                    next_block->next->prev = current;
-                }
-
-                // Continue coalescing in case of more adjacent free blocks
-                continue;
-            }
-        }
-
-        // Move to the next block
-        current = next_block;
+      // Check if cur is directly after free_block
+      if (ADD_BYTES(free_block, block_size(free_block)) == cur) {
+        // Coalesce free_block with cur
+        free_block->size += cur->size;
+        remove_from_free_list(cur);
+      }
     }
+
+    cur = cur->next;
+  }
+}
+
+void *request_more_memory(size_t size) {
+  // Round the size to a multiple of the page size for mmap
+  size_t total_size = round_up(size + kMetadataSize, kAlignment);
+
+  // Request more memory using mmap
+  Block *new_block = mmap(NULL, total_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+  if (new_block == MAP_FAILED) {
+    fprintf(stderr, "mmap failed with error: %s\n", strerror(errno));
+    return NULL;
+  }
+
+  // Set up the new block
+  new_block->size = total_size;
+  new_block->allocated = 0;
+  new_block->prev = NULL;
+  new_block->next = NULL;
+
+  // Insert the new block into the free list
+  insert_free_list(new_block);
+
+  // Coalesce the new block with adjacent blocks if possible
+  coalesce_adjacent_blocks(new_block);
+
+  return new_block;
 }
 
 void *my_malloc(size_t size) {
@@ -154,10 +179,15 @@ void *my_malloc(size_t size) {
   }
   size_t alloc_size = round_up(size + kMetadataSize, kAlignment);
   Block *free_block = find_free_block(alloc_size);
-  remove_from_free_list(free_block);
   if (free_block == NULL) {
-    return NULL;
-  } else if (free_block->size <= (alloc_size + kMetadataSize + kMinAllocationSize)){
+    // return NULL;
+    // No suitable free block, request more memory from the kernel
+    free_block = request_more_memory(alloc_size);
+  } 
+
+  remove_from_free_list(free_block);
+  
+  if (free_block->size <= (alloc_size + kMetadataSize + kMinAllocationSize)){
     // remove_from_free_list(free_block);
     free_block->allocated = 1;
     void *payload_ptr = ADD_BYTES(free_block, kMetadataSize);
@@ -192,7 +222,7 @@ void my_free(void *ptr) {
   insert_free_list(block);
 
   // Coalesce the block with its neighbors if possible
-  // coalesce_adjacent_blocks();
+  coalesce_adjacent_blocks(block);
 }
 
 /** These are helper functions you are required to implement for internal testing
