@@ -163,6 +163,7 @@ void remove_from_free_list(Block *block) {
 
 
 Block *split_block(Block *block, size_t size) {
+
   size_t remain_size = block->size - size;
   block->size = remain_size;
   block->allocated = 0;
@@ -176,7 +177,7 @@ Block *split_block(Block *block, size_t size) {
   right->size = size;
   right->allocated = 1;
   void *payload_ptr = ADD_BYTES(right, kMetadataSize);
-  memset(payload_ptr, 0, size);
+  // memset(payload_ptr, 0, size);
   return payload_ptr;
 }
 
@@ -220,7 +221,6 @@ void coalesce_adjacent_blocks(Block *free_block) {
 
 
 void *my_malloc(size_t size) {
-
   if (size == 0 || size > kMaxAllocationSize) {
     return NULL;
   }
