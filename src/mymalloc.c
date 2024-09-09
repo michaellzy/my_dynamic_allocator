@@ -1,6 +1,5 @@
 #include "mymalloc.h"
 
-
 // Word alignment
 const size_t kAlignment = sizeof(size_t);
 // Minimum allocation size (1 word)
@@ -14,8 +13,16 @@ const size_t kMemorySize = (64ull << 20);
 
 const size_t kAvailableSize = kMemorySize - 2 * kMetadataSize;
 
-Block *fencepost_start = NULL, *fencepost_end = NULL;
-Block *free_list_start = NULL;
+Block *free_list_head = NULL;
+Block *free_list_tail = NULL;
+
+static int is_requested_memory = 0;
+
+static struct ChunkInfo chunk_arr[128];
+int chunk_idx = 0;
+
+Block *cur_fencepost_start = NULL, *cur_fencepost_end = NULL;
+// Block *free_list_start = NULL;
 
 
 inline static size_t round_up(size_t size, size_t alignment) {
@@ -23,46 +30,93 @@ inline static size_t round_up(size_t size, size_t alignment) {
   return (size + mask) & ~mask;
 }
 
+void initialize() {
+  // Allocate memory for the head and tail of the free list using mmap
+  free_list_head = (Block *)mmap(NULL, sizeof(Block), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  free_list_tail = (Block *)mmap(NULL, sizeof(Block), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-void initialize_memory() {
-
-  fencepost_start = mmap(NULL, kMemorySize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
-  if (fencepost_start == MAP_FAILED) {
-    fprintf(stderr, "mmap failed with error: %s\n", strerror(errno));
+  if (free_list_head == MAP_FAILED || free_list_tail == MAP_FAILED) {
+    fprintf(stderr, "mmap failed to allocate memory for free list head or tail.\n");
     exit(1);
   }
-  fencepost_start->allocated = 1;
-  fencepost_start->next = NULL;
-  fencepost_start->prev = NULL;
-  fencepost_start->size = 0;
 
-  free_list_start = ADD_BYTES(fencepost_start, kMetadataSize);
-  free_list_start->allocated = 0;
-  free_list_start->size = kAvailableSize;
-  free_list_start->next = NULL;
-  free_list_start->prev = fencepost_start;
+  // Initialize the head and tail of the free list
+  free_list_head->size = 0;
+  free_list_head->allocated = 1;
+  free_list_tail->size = 0;
+  free_list_tail->allocated = 1;
 
+  // Set up the linked list
+  free_list_head->next = free_list_tail;
+  free_list_tail->prev = free_list_head;
+}
 
-  fencepost_end = ADD_BYTES(free_list_start, free_list_start->size);
-  fencepost_end->size = 0;
-  fencepost_end->allocated = 1;
-  fencepost_end->next = NULL;
-  fencepost_end->prev = free_list_start;
-
-  fencepost_start->next = free_list_start;
-  free_list_start->next = fencepost_end;
+int get_chunk_size(size_t alloc_size) {
+  int n = 1;
+  while (n * kAvailableSize < alloc_size) {
+    n++;
+  }
+  return n;
 }
 
 
+struct ChunkInfo request_memory(int n) {
+  is_requested_memory = 1;
+  struct ChunkInfo c;
+  Block *fencepost_start = NULL, *fencepost_end = NULL;
+  Block *free_list_start = NULL;
+  size_t request_mem_size = n * kMemorySize;
+  Block *head = mmap(NULL, request_mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+  if (head == MAP_FAILED) {
+    fprintf(stderr, "mmap failed with error: %s\n", strerror(errno));
+    exit(1);
+  }
+  fencepost_start = head;
+  fencepost_start->allocated = 1;
+  fencepost_start->next = NULL;
+  fencepost_start->prev = NULL;
+  fencepost_start->size = kMetadataSize;
+
+  free_list_start = ADD_BYTES(fencepost_start, kMetadataSize);
+  free_list_start->allocated = 0;
+  free_list_start->size = n * kAvailableSize;
+  free_list_start->next = NULL;
+  free_list_start->prev = NULL;
+
+  fencepost_end = ADD_BYTES(free_list_start, free_list_start->size);
+  fencepost_end->size = kMetadataSize;
+  fencepost_end->allocated = 1;
+  fencepost_end->next = NULL;
+  fencepost_end->prev = NULL;
+
+  c.fencepost_start = fencepost_start;
+  c.fencepost_end = fencepost_end;
+  c.block_start = free_list_start;
+  return c;
+}
+
+struct ChunkInfo get_cur_chunk(Block *block) {
+  for (int i = 0; i < chunk_idx; i++) {
+    Block *cur_fencepost_start = chunk_arr[i].fencepost_start;
+    Block *cur_fencepost_end = chunk_arr[i].fencepost_end;
+
+    // Check if the block is within the allocated range of the current chunk
+    if (block >= ADD_BYTES(cur_fencepost_start, kMetadataSize)  && block < cur_fencepost_end) {
+      return chunk_arr[i];
+    }
+  }
+  struct ChunkInfo invalid_chunk = {NULL, NULL, NULL};
+  return invalid_chunk;
+}
 
 Block *find_free_block(size_t size) {
-  Block *start = fencepost_start->next;
+  Block *start = free_list_head->next;
   Block *best = NULL;
-  size_t best_fit = kAvailableSize + 1;
+  size_t best_fit = __SIZE_MAX__;
 
-  while (start != NULL && start != fencepost_end) {
+  while (start != NULL && start != free_list_tail) {
     if (is_free(start) && block_size(start) >= size) {
-      if (block_size(start) < best_fit) {
+      if (start->size < best_fit) {
         best_fit = block_size(start);
         best = start;
       }
@@ -72,22 +126,37 @@ Block *find_free_block(size_t size) {
   return best;
 }
 
+
 void insert_free_list(Block *block) {
-  // block->allocated = 0;
-  Block *next = fencepost_start->next;
-  fencepost_start->next = block;
-  block->prev = fencepost_start;
-  block->next = next;
-  next->prev = block;
+  if (free_list_head->next == free_list_tail && free_list_tail->prev == free_list_head) {
+    free_list_head->next = block;
+    block->prev = free_list_head;
+    block->next = free_list_tail;
+    free_list_tail->prev = block;
+    return;
+  }
+
+   // Traverse the free list and insert block based on address order
+  Block *current = free_list_head->next;
+  while (current != free_list_tail) {
+    current = current->next;
+  }
+
+  // Insert the block before the current block
+  block->next = current;
+  block->prev = current->prev;
+
+  // Adjust pointers of the neighboring blocks
+  current->prev->next = block;
+  current->prev = block;
 }
 
 void remove_from_free_list(Block *block) {
-  if (block != fencepost_start && block != fencepost_end) {
+  if (block != free_list_head && block != free_list_tail) {
     block->prev->next = block->next;
     block->next->prev = block->prev;
   }
 }
-
 
 
 Block *split_block(Block *block, size_t size) {
@@ -110,10 +179,10 @@ Block *split_block(Block *block, size_t size) {
 
 
 void coalesce_adjacent_blocks(Block *free_block) {
-    Block *cur = fencepost_start->next;
+    Block *cur = free_list_head->next;
 
     // Iterate through the free list
-    while (cur != NULL && cur != fencepost_end) {
+    while (cur != NULL && cur != free_list_tail) {
         Block *next_block = cur->next;
         Block *prev_block = cur->prev;
 
@@ -133,7 +202,7 @@ void coalesce_adjacent_blocks(Block *free_block) {
         }
 
         // Case 3: Coalesce with both the previous and next blocks
-        if (cur != free_block && prev_block != fencepost_start && is_free(prev_block) && next_block != fencepost_end && is_free(next_block)) {
+        if (cur != free_block && prev_block != free_list_head && is_free(prev_block) && next_block != free_list_tail && is_free(next_block)) {
             // Coalesce prev_block, free_block, and next_block
             prev_block->size += free_block->size + next_block->size;
             remove_from_free_list(free_block);  // Remove free_block
@@ -147,43 +216,32 @@ void coalesce_adjacent_blocks(Block *free_block) {
 }
 
 
-void *request_more_memory() {
-  // Request more memory using mmap
-  Block *new_block = mmap(NULL, kMemorySize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
-  if (new_block == MAP_FAILED) {
-    fprintf(stderr, "mmap failed with error: %s\n", strerror(errno));
-    return NULL;
-  }
-
-  // Set up the new block
-  new_block->size = kMemorySize;
-  new_block->allocated = 0;
-  new_block->prev = NULL;
-  new_block->next = NULL;
-
-  // Insert the new block into the free list
-  insert_free_list(new_block);
-
-  // Coalesce the new block with adjacent blocks if possible
-  coalesce_adjacent_blocks(new_block);
-
-  return new_block;
-}
-
 void *my_malloc(size_t size) {
 
   if (size == 0 || size > kMaxAllocationSize) {
     return NULL;
   }
-  if (fencepost_start == NULL) {
-    initialize_memory();
-  }
+  
   size_t alloc_size = round_up(size + kMetadataSize, kAlignment);
+  if (is_requested_memory == 0) {
+    initialize();
+    struct ChunkInfo chunk;
+    int chunk_size = get_chunk_size(alloc_size);
+    chunk = request_memory(chunk_size);
+    chunk_arr[chunk_idx++] = chunk;
+    insert_free_list(chunk.block_start);
+  }
+
   Block *free_block = find_free_block(alloc_size);
   if (free_block == NULL) {
     // return NULL;
     // No suitable free block, request more memory from the kernel
-    free_block = request_more_memory();
+    struct ChunkInfo new_chunk;
+    int chunk_size = get_chunk_size(alloc_size);
+    new_chunk = request_memory(chunk_size);
+    chunk_arr[chunk_idx++] = new_chunk;
+    insert_free_list(new_chunk.block_start);
+    free_block = find_free_block(alloc_size);
   } 
 
   remove_from_free_list(free_block);
@@ -201,6 +259,19 @@ void *my_malloc(size_t size) {
   return payload;
 }
 
+int is_valid_allocated_block(Block *block) {
+  for (int i = 0; i < chunk_idx; i++) {
+    Block *cur_fencepost_start = chunk_arr[i].fencepost_start;
+    Block *cur_fencepost_end = chunk_arr[i].fencepost_end;
+
+    // Check if the block is within the allocated range of the current chunk
+    if (block >= ADD_BYTES(cur_fencepost_start, kMetadataSize)  && block < cur_fencepost_end && is_free(block)) {
+      return 1;  // Block is valid
+    }
+  }
+  return 0;
+}
+
 void my_free(void *ptr) {
   if (ptr == NULL) {
     return;
@@ -209,13 +280,12 @@ void my_free(void *ptr) {
   // Convert the payload pointer back to the metadata pointer
   Block *block = ptr_to_block(ptr);
 
-  if (fencepost_start == NULL || fencepost_end == NULL) {
+  if (!is_requested_memory) {
     free(ptr);
     return;
   }
 
-  
-  if (block <= fencepost_start || block >= fencepost_end || is_free(block) == 1) {
+  if (is_valid_allocated_block(block) == 0) {
     return;
   }
   
@@ -243,7 +313,7 @@ size_t block_size(Block *block) {
 
 /* Returns the first block in memory (excluding fenceposts) */
 Block *get_start_block(void) {
-  return free_list_start;
+  return NULL;
 }
 
 /* Returns the next block in memory */
@@ -251,9 +321,11 @@ Block *get_next_block(Block *block) {
   if (block == NULL) {
     return NULL;
   }
+
+  struct ChunkInfo c = get_cur_chunk(block);
   
   Block* next_block = ADD_BYTES(block, block_size(block));
-  if (next_block >= fencepost_end) {
+  if (next_block > c.fencepost_end) {
     return NULL;
   }
   return next_block;
