@@ -15,6 +15,7 @@ const size_t kAvailableSize = kMemorySize - 2 * kMetadataSize;
 
 Block *free_list_head = NULL;
 Block *free_list_tail = NULL;
+Block *cur_free_block = NULL;
 
 static int is_requested_memory = 0;
 
@@ -243,7 +244,7 @@ void *my_malloc(size_t size) {
     insert_free_list(new_chunk.block_start);
     free_block = find_free_block(alloc_size);
   } 
-
+  cur_free_block = free_block;
   remove_from_free_list(free_block);
   
   if (free_block->size <= (alloc_size + kMetadataSize + kMinAllocationSize)){
@@ -313,7 +314,9 @@ size_t block_size(Block *block) {
 
 /* Returns the first block in memory (excluding fenceposts) */
 Block *get_start_block(void) {
-  return NULL;
+  struct ChunkInfo c;
+  c = get_cur_chunk(cur_free_block);
+  return c.block_start;
 }
 
 /* Returns the next block in memory */
