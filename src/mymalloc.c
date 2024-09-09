@@ -137,19 +137,21 @@ void insert_free_list(Block *block) {
     return;
   }
 
-   // Traverse the free list and insert block based on address order
-  Block *current = free_list_head->next;
-  while (current != free_list_tail) {
-    current = current->next;
-  }
+   // Traverse the free list to find the correct position
+    Block *current = free_list_head->next;
+    while (current != free_list_tail && current < block) {
+        current = current->next;
+    }
 
-  // Insert the block before the current block
-  block->next = current;
-  block->prev = current->prev;
+    // Insert the block before the current block
+    block->next = current;
+    block->prev = current->prev;
 
-  // Adjust pointers of the neighboring blocks
-  current->prev->next = block;
-  current->prev = block;
+    // Adjust pointers of the neighboring blocks
+    if (current->prev) {
+        current->prev->next = block;
+    }
+    current->prev = block;
 }
 
 void remove_from_free_list(Block *block) {

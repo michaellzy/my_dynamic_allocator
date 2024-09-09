@@ -54,7 +54,6 @@ extern const size_t kMaxAllocationSize;
 // Memory size that is mmapped (64 MB)
 extern const size_t kMemorySize;
 
-
 struct ChunkInfo get_cur_chunk(Block *block);
 void *my_malloc(size_t size);
 void my_free(void *p);
