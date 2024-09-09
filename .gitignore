@@ -15,6 +15,7 @@
 *.so
 
 */*.dSYM/
+.venv
 
 # files & folders you don't want in the repo
 .DS_Store
