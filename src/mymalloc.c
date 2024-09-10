@@ -23,7 +23,6 @@ static struct ChunkInfo chunk_arr[128];
 int chunk_idx = 0;
 
 Block *cur_fencepost_start = NULL, *cur_fencepost_end = NULL;
-// Block *free_list_start = NULL;
 
 
 inline static size_t round_up(size_t size, size_t alignment) {
@@ -177,7 +176,8 @@ Block *split_block(Block *block, size_t size) {
   right->size = size;
   right->allocated = 1;
   void *payload_ptr = ADD_BYTES(right, kMetadataSize);
-  // memset(payload_ptr, 0, size);
+
+  memset(payload_ptr, 0, size - kMetadataSize);
   return payload_ptr;
 }
 
@@ -262,13 +262,13 @@ void *my_malloc(size_t size) {
   return payload;
 }
 
-int is_valid_allocated_block(Block *block) {
+int is_valid_block(Block *block) {
   for (int i = 0; i < chunk_idx; i++) {
     Block *cur_fencepost_start = chunk_arr[i].fencepost_start;
     Block *cur_fencepost_end = chunk_arr[i].fencepost_end;
 
     // Check if the block is within the allocated range of the current chunk
-    if (block >= ADD_BYTES(cur_fencepost_start, kMetadataSize)  && block < cur_fencepost_end && is_free(block)) {
+    if (block >= ADD_BYTES(cur_fencepost_start, kMetadataSize)  && block < cur_fencepost_end) {
       return 1;  // Block is valid
     }
   }
@@ -288,7 +288,7 @@ void my_free(void *ptr) {
     return;
   }
 
-  if (is_valid_allocated_block(block) == 0) {
+  if (is_valid_block(block) == 0 && !is_free(block)) {
     return;
   }
   
@@ -327,10 +327,14 @@ Block *get_next_block(Block *block) {
     return NULL;
   }
 
+  if (!is_valid_block(block)) {
+    return NULL;
+  }
+
   struct ChunkInfo c = get_cur_chunk(block);
   
   Block* next_block = ADD_BYTES(block, block_size(block));
-  if (next_block > c.fencepost_end) {
+  if (next_block >= c.fencepost_end) {
     return NULL;
   }
   return next_block;
