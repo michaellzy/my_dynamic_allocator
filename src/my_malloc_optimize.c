@@ -8,11 +8,11 @@ const size_t kMinAllocationSize = kAlignment;
 const size_t kMetadataSize = sizeof(Block);
 const size_t kFreeMetadataSize = sizeof(FreeBlock);
 // Maximum allocation size (128 MB)
-const size_t kMaxAllocationSize = (128ull << 20) - 8 * kMetadataSize;
+const size_t kMaxAllocationSize = (128ull << 20) - 4 * kMetadataSize;
 // Memory size that is mmapped (64 MB)
 const size_t kMemorySize = (64ull << 20);
 
-const size_t kAvailableSize = kMemorySize - 3 * kMetadataSize - kFreeMetadataSize;
+const size_t kAvailableSize = kMemorySize - 2 * kMetadataSize;
 
 FreeBlock *free_list_head = NULL;
 FreeBlock *free_list_tail = NULL;
@@ -65,8 +65,7 @@ struct ChunkInfo request_memory(int n) {
   is_requested_memory = 1;
   struct ChunkInfo c;
   Block *fencepost_start = NULL, *fencepost_end = NULL;
-  Block *footer = NULL;
-  FreeBlock *free_list_start = NULL;
+  Block *free_list_start = NULL;
   size_t request_mem_size = n * kMemorySize;
   Block *head = mmap(NULL, request_mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
   if (head == MAP_FAILED) {
@@ -80,14 +79,8 @@ struct ChunkInfo request_memory(int n) {
   free_list_start = ADD_BYTES(fencepost_start, kMetadataSize);
   free_list_start->allocated = 0;
   free_list_start->size = n * kAvailableSize;
-  free_list_start->next = NULL;
-  free_list_start->prev = NULL;
 
-  footer = ADD_BYTES(free_list_start, free_list_start->size);
-  footer->allocated = 0;
-  footer->size = kMetadataSize;
-
-  fencepost_end = ADD_BYTES(footer, kMetadataSize);
+  fencepost_end = ADD_BYTES(free_list_start, free_list_start->size);
   fencepost_end->size = kMetadataSize;
   fencepost_end->allocated = 1;
 
@@ -117,9 +110,9 @@ FreeBlock *find_free_block(size_t size) {
   size_t best_fit = __SIZE_MAX__;
 
   while (start != NULL && start != free_list_tail) {
-    if (is_free(start) && block_size(start) >= size) {
+    if (is_free((Block*)start) && block_size((Block*)start) >= size) {
       if (start->size < best_fit) {
-        best_fit = block_size(start);
+        best_fit = block_size((Block*)start);
         best = start;
       }
     }
@@ -147,38 +140,36 @@ void remove_from_free_list(FreeBlock *block) {
 }
 
 
-Block *split_block(Block *block, size_t size) {
+Block *split_block(FreeBlock *block, size_t size) {
 
   size_t remain_size = block->size - size;
   block->size = remain_size;
   block->allocated = 0;
-  FreeBlock *remain_free_block = (FreeBlock*)block;
-  remain_free_block->size = remain_size;
-  remain_free_block->allocated = 0;
-  Block *footer = get_footer(remain_free_block, remain_size);
+  
+  Block *footer = get_footer((Block*)block, remain_size);
   footer->allocated = 0;
   footer->size = remain_size;
 
   if (remain_size >= kMetadataSize + kMinAllocationSize + kFreeMetadataSize) {
-    insert_free_list(remain_free_block);
+    insert_free_list(block);
   } else {
     block->allocated = 1;
   }
 
-  Block* right = get_next_block(block);
+  Block* right = get_next_block((Block*)block);
   right->size = size;
   right->allocated = 1;
   void *payload_ptr = ADD_BYTES(right, kMetadataSize);
 
-  memset(payload_ptr, 0, size - kMetadataSize);
-  Block *footer = get_footer(right, size);
-  footer->allocated = 1; 
-  footer->size = size;
+  memset(payload_ptr, 0, size - 2 * kMetadataSize);
+  Block *footer_allocate = get_footer(right, size);
+  footer_allocate->allocated = 1; 
+  footer_allocate->size = size;
   return payload_ptr;
 }
 
 
-void coalesce_adjacent_blocks(Block *free_block) {
+void coalesce_adjacent_blocks(FreeBlock *free_block) {
    
 }
 
@@ -208,7 +199,7 @@ void *my_malloc(size_t size) {
     int chunk_size = get_chunk_size(alloc_size);
     chunk = request_memory(chunk_size);
     chunk_arr[chunk_idx++] = chunk;
-    insert_free_list(chunk.block_start);
+    insert_free_list((FreeBlock*)chunk.block_start);
   }
 
   FreeBlock *free_block = find_free_block(alloc_size);
@@ -219,7 +210,7 @@ void *my_malloc(size_t size) {
     int chunk_size = get_chunk_size(alloc_size);
     new_chunk = request_memory(chunk_size);
     chunk_arr[chunk_idx++] = new_chunk;
-    insert_free_list(new_chunk.block_start);
+    insert_free_list((FreeBlock*)new_chunk.block_start);
     free_block = find_free_block(alloc_size);
   } 
   cur_free_block = free_block;
@@ -263,10 +254,10 @@ void my_free(void *ptr) {
   }
   
   block->allocated = 0;  // Mark the block as free
-  insert_free_list(block);
+  insert_free_list((FreeBlock*)block);
 
   // Coalesce the block with its neighbors if possible
-  coalesce_adjacent_blocks(block);
+  coalesce_adjacent_blocks((FreeBlock*)block);
 }
 
 /** These are helper functions you are required to implement for internal testing
@@ -310,6 +301,23 @@ Block *get_next_block(Block *block) {
   return next_block;
 }
 
+Block *get_prev_block(Block *block) {
+  if (block == NULL) {
+    return NULL;
+  }
+
+  if (!is_valid_block(block)) {
+    return NULL;
+  }
+  Block *footer = ADD_BYTES(block, -((size_t) kMetadataSize));
+  Block *prev_block = ADD_BYTES(block, footer->size);
+  struct ChunkInfo c = get_cur_chunk(block);
+  if (prev_block < c.fencepost_start + kMetadataSize) {
+    return NULL;
+  }
+  return prev_block;
+}
+
 /* Given a ptr assumed to be returned from a previous call to `my_malloc`,
    return a pointer to the start of the metadata block. */
 Block *ptr_to_block(void *ptr) {
@@ -318,5 +326,5 @@ Block *ptr_to_block(void *ptr) {
 
 Block *get_footer(void* ptr, size_t alloc_size) {
     void* end_ptr = ADD_BYTES(ptr, alloc_size);
-    return ADD_BYTES(end_ptr, -kMetadataSize);
+    return ADD_BYTES(end_ptr, -((size_t) kMetadataSize));
 }

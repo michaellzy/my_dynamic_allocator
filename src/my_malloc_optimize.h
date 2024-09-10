@@ -55,8 +55,8 @@ struct FreeBlock {
 //   Block* block_start;
 // };
 struct ChunkInfo {
-    AllocatedBlock* fencepost_start;
-    AllocatedBlock* fencepost_end;
+    Block* fencepost_start;
+    Block* fencepost_end;
     FreeBlock* block_start;
 };
 
@@ -79,10 +79,14 @@ void initialize();
 int get_chunk_size(size_t alloc_size);
 struct ChunkInfo request_memory(int n);
 struct ChunkInfo get_cur_chunk(Block *block);
-Block *find_free_block(size_t size);
-void insert_free_list(Block *block);
-void remove_from_free_list(Block *block);
-Block *split_block(Block *block, size_t size);
+// Block *find_free_block(size_t size);
+FreeBlock *find_free_block(size_t size);
+// void insert_free_list(Block *block);
+void insert_free_list(FreeBlock *block);
+// void remove_from_free_list(Block *block);
+void remove_from_free_list(FreeBlock *block);
+// Block *split_block(Block *block, size_t size);
+Block *split_block(FreeBlock *block, size_t size);
 void coalesce_adjacent_blocks(Block *free_block);
 int is_valid_block(Block *block);
 void *my_malloc(size_t size);
@@ -96,5 +100,7 @@ Block *get_start_block(void);
 Block *get_next_block(Block *block);
 
 Block *ptr_to_block(void *ptr);
+
+Block *get_footer(void* ptr, size_t alloc_size);
 
 #endif
