@@ -1,5 +1,5 @@
-#ifndef MYMALLOC_HEADER
-#define MYMALLOC_HEADER
+#ifndef MYMALLOC_OPTIMIZE_HEADER
+#define MYMALLOC_OPTIMIZE_HEADER
 
 #include <stddef.h>
 #include <stdio.h>
@@ -25,21 +25,39 @@
  *  for certain optimisations) as long as you don't move the definition from 
  *  this file. **/
 typedef struct Block Block;
+typedef struct FreeBlock FreeBlock;
+
+// struct Block {
+//   // Size of the block, including meta-data size.
+//   size_t cur_size;
+//   // Next and Prev blocks
+//   Block *next;
+//   Block *prev;
+//   // Is the block allocated or not?
+//   bool allocated;
+// };
 
 struct Block {
-  // Size of the block, including meta-data size.
-  size_t size;
-  // Next and Prev blocks
-  Block *next;
-  Block *prev;
-  // Is the block allocated or not?
-  bool allocated;
+    size_t size;
+    bool allocated;
 };
 
+struct FreeBlock {
+    size_t size;
+    bool allocated;
+    FreeBlock *next;
+    FreeBlock *prev;
+};
+
+// struct ChunkInfo {
+//   Block* fencepost_start;
+//   Block* fencepost_end;
+//   Block* block_start;
+// };
 struct ChunkInfo {
-  Block* fencepost_start;
-  Block* fencepost_end;
-  Block* block_start;
+    AllocatedBlock* fencepost_start;
+    AllocatedBlock* fencepost_end;
+    FreeBlock* block_start;
 };
 
 
@@ -53,6 +71,9 @@ extern const size_t kMetadataSize;
 extern const size_t kMaxAllocationSize;
 // Memory size that is mmapped (64 MB)
 extern const size_t kMemorySize;
+
+extern const size_t kAllocatedMetadataSize;
+extern const size_t kFreeMetadataSize;
 
 void initialize();
 int get_chunk_size(size_t alloc_size);
