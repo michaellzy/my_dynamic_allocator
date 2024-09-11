@@ -24,7 +24,7 @@
 
 #define NUM_ITERS 300
 #define NUM_ALLOCS 4
-#define MAX_ALLOCS 200
+#define MAX_ALLOCS 100
 
 typedef struct {
   size_t iters;
