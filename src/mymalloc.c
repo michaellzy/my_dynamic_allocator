@@ -161,7 +161,7 @@ Block *split_block(FreeBlock *block, size_t size) {
   right->allocated = 1;
   void *payload_ptr = ADD_BYTES(right, kMetadataSize);
 
-  // memset(payload_ptr, 0, size - 2 * kMetadataSize);
+  memset(payload_ptr, 0, size - 2 * kMetadataSize);
   Block *footer_allocate = get_footer(right, size);
   footer_allocate->allocated = 1; 
   footer_allocate->size = size;
@@ -277,7 +277,7 @@ void *my_malloc(size_t size) {
     cur_allocated_block->size = alloc_size;
     free_block->allocated = 1;
     void *payload_ptr = ADD_BYTES(free_block, kMetadataSize);
-    // memset(payload_ptr, 0, size);
+    memset(payload_ptr, 0, size - 2 * kMetadataSize);
     Block *footer = get_footer(free_block, alloc_size);
     footer->allocated = 1;
     footer->size = alloc_size;
