@@ -165,12 +165,18 @@ Block *split_block(FreeBlock *block, size_t size) {
   Block *footer_allocate = get_footer(right, size);
   footer_allocate->allocated = 1; 
   footer_allocate->size = size;
+
+  Block *prev_block = get_prev_block(right);
   return payload_ptr;
 }
 
 
 void coalesce_adjacent_blocks(FreeBlock *free_block) {
-   
+  Block* prev_block = get_prev_block((Block*)free_block);
+  Block* next_block = get_next_block((Block*)free_block);
+  if (prev_block && prev_block->allocated && next_block && next_block->allocated) {
+    insert_free_list(free_block);
+  }
 }
 
 int is_valid_block(Block *block) {
@@ -249,7 +255,7 @@ void my_free(void *ptr) {
     return;
   }
 
-  if (is_valid_block(block) == 0 && !is_free(block)) {
+  if (!is_valid_block(block)) {
     return;
   }
   
@@ -278,7 +284,7 @@ size_t block_size(Block *block) {
 /* Returns the first block in memory (excluding fenceposts) */
 Block *get_start_block(void) {
   struct ChunkInfo c;
-  c = get_cur_chunk(cur_free_block);
+  c = get_cur_chunk((Block*)cur_free_block);
   return c.block_start;
 }
 
@@ -310,9 +316,9 @@ Block *get_prev_block(Block *block) {
     return NULL;
   }
   Block *footer = ADD_BYTES(block, -((size_t) kMetadataSize));
-  Block *prev_block = ADD_BYTES(block, footer->size);
+  Block *prev_block = ADD_BYTES(block, -((size_t)footer->size));
   struct ChunkInfo c = get_cur_chunk(block);
-  if (prev_block < c.fencepost_start + kMetadataSize) {
+  if (prev_block < ADD_BYTES(c.fencepost_start, kMetadataSize)) {
     return NULL;
   }
   return prev_block;

@@ -87,7 +87,7 @@ void insert_free_list(FreeBlock *block);
 void remove_from_free_list(FreeBlock *block);
 // Block *split_block(Block *block, size_t size);
 Block *split_block(FreeBlock *block, size_t size);
-void coalesce_adjacent_blocks(Block *free_block);
+void coalesce_adjacent_blocks(FreeBlock *free_block);
 int is_valid_block(Block *block);
 void *my_malloc(size_t size);
 void my_free(void *p);
@@ -98,7 +98,7 @@ size_t block_size(Block *block);
 
 Block *get_start_block(void); 
 Block *get_next_block(Block *block);
-
+Block *get_prev_block(Block *block);
 Block *ptr_to_block(void *ptr);
 
 Block *get_footer(void* ptr, size_t alloc_size);
