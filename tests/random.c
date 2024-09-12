@@ -12,7 +12,9 @@ int orders[] = {987, 944, 639, 1013, 128, 820, 600, 92, 394, 278, 801, 939, 486,
 int main(void) {
   void *ptrs[NALLOCS];
   mallocing_loop(ptrs, 8, NALLOCS);
+  printf("43th is : %d\n", orders[43]);
   for (int i = 0; i < NALLOCS; i++) {
+    printf("%d\n", i);
     freeing(ptrs[orders[i]]);
   }
   return 0;

@@ -1,4 +1,4 @@
-#include "mymalloc.h"
+#include "my_malloc_base.h"
 
 // Word alignment
 const size_t kAlignment = sizeof(size_t);
@@ -173,12 +173,15 @@ Block *split_block(Block *block, size_t size) {
   }
 
   Block* right = get_next_block(block);
-  right->size = size;
-  right->allocated = 1;
-  void *payload_ptr = ADD_BYTES(right, kMetadataSize);
+  if (right != NULL) {
+    right->size = size;
+    right->allocated = 1;
+    void *payload_ptr = ADD_BYTES(right, kMetadataSize);
+    memset(payload_ptr, 0, size - kMetadataSize);
+    return payload_ptr;
+  }
 
-  memset(payload_ptr, 0, size - kMetadataSize);
-  return payload_ptr;
+
 }
 
 

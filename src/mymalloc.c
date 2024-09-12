@@ -1,4 +1,4 @@
-#include "my_malloc_optimize.h"
+#include "mymalloc.h"
 
 // Word alignment
 const size_t kAlignment = sizeof(size_t);
@@ -129,6 +129,9 @@ void insert_free_list(FreeBlock *block) {
   block->next = next;
   next->prev = block;
 
+  Block *footer = get_footer(block, block_size(block));
+  size_t get_size = footer->size;
+
 
 }
 
@@ -169,13 +172,17 @@ Block *split_block(FreeBlock *block, size_t size) {
 }
 
 
-void coalesce_adjacent_blocks(FreeBlock *free_block) {
-  Block* prev_block = get_prev_block((Block*)free_block);
-  Block* next_block = get_next_block((Block*)free_block);
+void coalesce_adjacent_blocks(Block *free_block) {
+  Block* prev_block = get_prev_block(free_block);
+  Block* next_block = get_next_block(free_block);
+  // munmap(free_block, free_block->size);
   if (prev_block && !is_free(prev_block) && next_block && !is_free(next_block)) {
-    insert_free_list(free_block);
-    Block* footer = get_footer(free_block, free_block->size);
+    Block* footer = NULL;
+    footer = get_footer(free_block, free_block->size);
     footer->allocated = 0;
+    footer->size = block_size(free_block);
+    free_block->allocated = 0;
+    insert_free_list((FreeBlock*)free_block);
     
   } else if (prev_block && is_free(prev_block) && next_block && is_free(next_block)) {
     FreeBlock* new_head = NULL;
@@ -183,7 +190,7 @@ void coalesce_adjacent_blocks(FreeBlock *free_block) {
     FreeBlock *next_free_block = (FreeBlock*)next_block;
     splice_out_block(prev_free_block);
     splice_out_block(next_free_block);
-    size_t coalesce_size = block_size(prev_block) + block_size((Block*)free_block) + block_size(next_block);
+    size_t coalesce_size = block_size(prev_block) + block_size(free_block) + block_size(next_block);
     new_head = prev_free_block;
     new_head->allocated = 0;
     new_head->size = coalesce_size;
@@ -221,6 +228,10 @@ void coalesce_adjacent_blocks(FreeBlock *free_block) {
 }
 
 void splice_out_block(FreeBlock* block) {
+  if (block == free_list_head || block == free_list_tail) {
+    return;
+  }
+
   FreeBlock *prev = block->prev;
   FreeBlock *next = block->next;
   prev->next = next;
@@ -278,7 +289,7 @@ void *my_malloc(size_t size) {
     free_block->allocated = 1;
     void *payload_ptr = ADD_BYTES(free_block, kMetadataSize);
     memset(payload_ptr, 0, size - 2 * kMetadataSize);
-    Block *footer = get_footer(free_block, alloc_size);
+    Block *footer = get_footer(cur_allocated_block, alloc_size);
     footer->allocated = 1;
     footer->size = alloc_size;
     return payload_ptr;
@@ -311,7 +322,7 @@ void my_free(void *ptr) {
   // insert_free_list((FreeBlock*)block);
 
   // Coalesce the block with its neighbors if possible
-  coalesce_adjacent_blocks((FreeBlock*)block);
+  coalesce_adjacent_blocks(block);
 }
 
 /** These are helper functions you are required to implement for internal testing
@@ -363,7 +374,8 @@ Block *get_prev_block(Block *block) {
   if (!is_valid_block(block)) {
     return NULL;
   }
-  Block *footer = ADD_BYTES(block, -((size_t) kMetadataSize));
+  void* ptr = ADD_BYTES(block, -((size_t) kMetadataSize));
+  Block *footer = (Block*)ptr;
   Block *prev_block = ADD_BYTES(block, -((size_t)footer->size));
   struct ChunkInfo c = get_cur_chunk(block);
   if (prev_block < ADD_BYTES(c.fencepost_start, kMetadataSize)) {

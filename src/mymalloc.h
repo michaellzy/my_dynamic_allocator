@@ -88,7 +88,7 @@ void remove_from_free_list(FreeBlock *block);
 // Block *split_block(Block *block, size_t size);
 Block *split_block(FreeBlock *block, size_t size);
 void splice_out_block(FreeBlock* block);
-void coalesce_adjacent_blocks(FreeBlock *free_block);
+void coalesce_adjacent_blocks(Block *free_block);
 int is_valid_block(Block *block);
 void *my_malloc(size_t size);
 void my_free(void *p);
