@@ -19,13 +19,13 @@
 
 #define ADD_BYTES(ptr, n) ((void *) (((char *) (ptr)) + (n)))
 
+
 /** This is the Block struct, which contains all metadata needed for your 
  *  explicit free list. You are allowed to modify this struct (and will need to 
  *  for certain optimisations) as long as you don't move the definition from 
  *  this file. **/
 typedef struct Block Block;
-// typedef struct FreeBlock FreeBlock;
-typedef struct Linker Linker;
+typedef struct FreeBlock FreeBlock;
 
 // struct Block {
 //   // Size of the block, including meta-data size.
@@ -42,17 +42,12 @@ struct Block {
     bool allocated;
 };
 
-struct Linker {
-    Linker *prev;
-    Linker *next;
+struct FreeBlock {
+    size_t size;
+    bool allocated;
+    FreeBlock *next;
+    FreeBlock *prev;
 };
-
-// struct FreeBlock {
-//     size_t size;
-//     bool allocated;
-//     FreeBlock *next;
-//     FreeBlock *prev;
-// };
 
 // struct ChunkInfo {
 //   Block* fencepost_start;
@@ -62,7 +57,7 @@ struct Linker {
 struct ChunkInfo {
     Block* fencepost_start;
     Block* fencepost_end;
-    Block* block_start;
+    FreeBlock* block_start;
 };
 
 
@@ -85,14 +80,14 @@ int get_chunk_size(size_t alloc_size);
 struct ChunkInfo request_memory(int n);
 struct ChunkInfo get_cur_chunk(Block *block);
 // Block *find_free_block(size_t size);
-Block *find_free_block(size_t size);
+FreeBlock *find_free_block(size_t size);
 // void insert_free_list(Block *block);
-void insert_free_list(Block *block);
+void insert_free_list(FreeBlock *block);
 // void remove_from_free_list(Block *block);
-// void remove_from_free_list(Block *block);
+void remove_from_free_list(FreeBlock *block);
 // Block *split_block(Block *block, size_t size);
-Block *split_block(Block *block, size_t size);
-void splice_out_block(Block* block);
+Block *split_block(FreeBlock *block, size_t size);
+void splice_out_block(FreeBlock* block);
 void coalesce_adjacent_blocks(Block *free_block);
 int is_valid_block(Block *block);
 void *my_malloc(size_t size);
@@ -106,7 +101,7 @@ Block *get_start_block(void);
 Block *get_next_block(Block *block);
 Block *get_prev_block(Block *block);
 Block *ptr_to_block(void *ptr);
-Linker *get_linker(Block* block);
+
 Block *get_footer(void* ptr, size_t alloc_size);
 
 #endif
