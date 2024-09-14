@@ -25,6 +25,10 @@ static int chunk_idx = 0;
 
 Block *cur_fencepost_start = NULL, *cur_fencepost_end = NULL;
 
+inline static size_t round_down(size_t num) {
+  return num & ~7;  // This clears the lower 3 bits (which are the binary representation of 7)
+}
+
 
 inline static size_t round_up(size_t size, size_t alignment) {
   const size_t mask = alignment - 1;
@@ -139,7 +143,7 @@ void remove_from_free_list(FreeBlock *block) {
 
 
 Block *split_block(FreeBlock *block, size_t size) {
-  size_t remain_size = block->size - size;
+  size_t remain_size = round_down(block->size - size);
   block->size = remain_size;
   block->allocated = 0;
   
@@ -169,6 +173,17 @@ Block *split_block(FreeBlock *block, size_t size) {
 void coalesce_adjacent_blocks(Block *free_block) {
   Block* prev_block = get_prev_block(free_block);
   Block* next_block = get_next_block(free_block);
+
+  if ((prev_block == NULL && is_valid_block(free_block)) || (next_block == NULL && is_valid_block(free_block))) {
+    Block* footer = NULL;
+    footer = get_footer(free_block, free_block->size);
+    footer->allocated = 0;
+    footer->size = block_size(free_block);
+    free_block->allocated = 0;
+    free_block->size = block_size(free_block);
+    insert_free_list((FreeBlock*)free_block);
+    return;
+  }
   // munmap(free_block, free_block->size);
   if (prev_block && !is_free(prev_block) && next_block && !is_free(next_block)) {
     Block* footer = NULL;
@@ -198,7 +213,7 @@ void coalesce_adjacent_blocks(Block *free_block) {
     FreeBlock* new_head = NULL;
     FreeBlock *next_free_block = (FreeBlock*)next_block;
     splice_out_block(next_free_block);
-    size_t coalesce_size = block_size(free_block) + block_size(next_block);
+    size_t coalesce_size = block_size((Block*)free_block) + block_size(next_block);
     new_head = free_block;
     new_head->allocated = 0;
     new_head->size = coalesce_size;
@@ -210,7 +225,7 @@ void coalesce_adjacent_blocks(Block *free_block) {
     FreeBlock* new_head = NULL;
     FreeBlock *prev_free_block = (FreeBlock*)prev_block;
     splice_out_block(prev_free_block);
-    size_t coalesce_size = block_size(free_block) + block_size(prev_block);
+    size_t coalesce_size = block_size((Block*)free_block) + block_size(prev_block);
     new_head = prev_free_block;
     new_head->allocated = 0;
     new_head->size = coalesce_size;
@@ -284,13 +299,15 @@ void *my_malloc(size_t size) {
     // remove_from_free_list(free_block);
     Block *cur_allocated_block = (Block*)free_block;
     cur_allocated_block->allocated = 1;
-    cur_allocated_block->size = alloc_size;
+    // cur_allocated_block->size = alloc_size;
+    cur_allocated_block->size = block_size((Block*)free_block);
     free_block->allocated = 1;
     void *payload_ptr = ADD_BYTES(free_block, kMetadataSize);
     // memset(payload_ptr, 0, size - 2 * kMetadataSize);
     Block *footer = get_footer(cur_allocated_block, alloc_size);
     footer->allocated = 1;
-    footer->size = alloc_size;
+    // footer->size = alloc_size;
+    footer->size = block_size((Block*)free_block);
     return payload_ptr;
   }
 

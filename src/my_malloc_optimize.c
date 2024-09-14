@@ -138,21 +138,6 @@ void insert_free_list(Block *block) {
   next->prev = cur_linker;
 }
 
-void remove_from_free_list(Block *block) {
-  // Linker *cur_linker = get_linker(block);
-  // if (cur_linker != free_list_head && cur_linker != free_list_tail) {
-  //   cur_linker->prev->next = cur_linker->next;
-  //   cur_linker->next->prev = cur_linker->prev;
-  // }
-  Linker *cur_linker = get_linker(block);
-  if (cur_linker != free_list_head && cur_linker != free_list_tail) {
-    Linker *prev = cur_linker->prev;
-    Linker *next = cur_linker->next;
-    prev->next = next;
-    next->prev = prev;
-  }
-}
-
 
 Block *split_block(Block *block, size_t size) {
 
@@ -293,19 +278,20 @@ void *my_malloc(size_t size) {
     free_block = find_free_block(alloc_size);
   } 
   cur_free_block = free_block;
-  remove_from_free_list(free_block);
+  // remove_from_free_list(free_block);
+  splice_out_block(free_block);
   
   if (free_block->size <= (alloc_size + kMetadataSize + kMinAllocationSize)){
     // remove_from_free_list(free_block);
     Block *cur_allocated_block = free_block;
     cur_allocated_block->allocated = 1;
-    cur_allocated_block->size = alloc_size;
+    cur_allocated_block->size = block_size(free_block);
     free_block->allocated = 1;
     void *payload_ptr = ADD_BYTES(free_block, kMetadataSize);
     // memset(payload_ptr, 0, size);
     Block *footer = get_footer(free_block, alloc_size);
     footer->allocated = 1;
-    footer->size = alloc_size;
+    footer->size = block_size(free_block);
     return payload_ptr;
   }
 

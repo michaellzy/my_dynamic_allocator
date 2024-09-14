@@ -89,7 +89,7 @@ Block *find_free_block(size_t size);
 // void insert_free_list(Block *block);
 void insert_free_list(Block *block);
 // void remove_from_free_list(Block *block);
-void remove_from_free_list(Block *block);
+// void remove_from_free_list(Block *block);
 // Block *split_block(Block *block, size_t size);
 Block *split_block(Block *block, size_t size);
 void splice_out_block(Block* block);
