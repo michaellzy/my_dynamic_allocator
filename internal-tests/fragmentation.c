@@ -8,9 +8,9 @@
 
 // You can modify these values to be larger or smaller as needed
 // By default they are quite small to help you test your code.
-#define REPTS 1000
-#define NUM_PTRS 100
-#define MAX_ALLOC_SIZE 4096
+#define REPTS 500
+#define NUM_PTRS 4
+#define MAX_ALLOC_SIZE 30
 
 char *ptrs[NUM_PTRS];
 
@@ -25,8 +25,11 @@ void random_allocations() {
     int idx = random_in_range(0, NUM_PTRS-1);
     if (ptrs[idx] == NULL) {
       size_t random_size = (size_t) random_in_range(0, MAX_ALLOC_SIZE);
+      printf("random allocated: %d\n", random_size);
       ptrs[idx] = my_malloc(random_size);
     } else {
+      printf("%d\n", i);
+      printf("random freed: %d\n", ptrs[idx]);
       my_free(ptrs[idx]);
       ptrs[idx] = NULL;
     }
