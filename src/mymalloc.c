@@ -15,9 +15,6 @@ const size_t kMemorySize = (64ull << 20);
 
 const size_t kAvailableSize = kMemorySize - 2 * kLinkMetadataSize;
 
-// FreeBlock *free_list_head = NULL;
-// FreeBlock *free_list_tail = NULL;
-
 Linker *free_list_head = NULL;
 Linker *free_list_tail = NULL;
 Block *cur_free_block = NULL;
@@ -145,15 +142,16 @@ Block *split_block(Block *block, size_t size) {
   block->size = remain_size;
   block->allocated = 0;
 
+  Block *footer = get_footer((Block*)block, remain_size);
   
-  Block *footer = get_footer(block, remain_size);
-  footer->allocated = 0;
-  footer->size = remain_size;
-
-  if (remain_size >= kMetadataSize + kMinAllocationSize + kMetadataSize) {
+  if (remain_size >= 2 * kMetadataSize + kMinAllocationSize + kLinkMetadataSize) {
     insert_free_list(block);
+    footer->allocated = 0;
+    footer->size = remain_size;
   } else {
     block->allocated = 1;
+    footer->allocated = 1;
+    footer->size = remain_size;
   }
 
   Block* right = get_next_block(block);
@@ -173,6 +171,17 @@ void coalesce_adjacent_blocks(Block *free_block) {
   Block* prev_block = get_prev_block(free_block);
   Block* next_block = get_next_block(free_block);
   // munmap(free_block+kMetadataSize, free_block->size - 2 * kMetadataSize);
+  if ((prev_block == NULL && is_valid_block(free_block)) || (next_block == NULL && is_valid_block(free_block))) {
+    Block* footer = NULL;
+    footer = get_footer(free_block, block_size(free_block));
+    footer->allocated = 0;
+    footer->size = block_size(free_block);
+    free_block->allocated = 0;
+    free_block->size = block_size(free_block);
+    insert_free_list(free_block);
+    return;
+  }
+
   if (prev_block && !is_free(prev_block) && next_block && !is_free(next_block)) {
     free_block->allocated = 0;
     free_block->size = block_size(free_block);
@@ -256,6 +265,7 @@ void *my_malloc(size_t size) {
   if (alloc_size < min_allocation_size) {
     alloc_size = min_allocation_size;
   }
+  // size_t alloc_size = round_up(kMetadataSize + kLinkMetadataSize + size + kMetadataSize, kAlignment);
 
   if (is_requested_memory == 0) {
     initialize();
@@ -281,7 +291,7 @@ void *my_malloc(size_t size) {
   // remove_from_free_list(free_block);
   splice_out_block(free_block);
   
-  if (free_block->size <= (alloc_size + kMetadataSize + kMinAllocationSize)){
+  if (block_size(free_block) <= (alloc_size + kMetadataSize + kMinAllocationSize)){
     // remove_from_free_list(free_block);
     Block *cur_allocated_block = free_block;
     cur_allocated_block->allocated = 1;
@@ -289,7 +299,7 @@ void *my_malloc(size_t size) {
     free_block->allocated = 1;
     void *payload_ptr = ADD_BYTES(free_block, kMetadataSize);
     // memset(payload_ptr, 0, size);
-    Block *footer = get_footer(free_block, alloc_size);
+    Block *footer = get_footer(free_block, block_size(free_block));
     footer->allocated = 1;
     footer->size = block_size(free_block);
     return payload_ptr;
