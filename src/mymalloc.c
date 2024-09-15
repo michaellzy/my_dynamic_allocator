@@ -69,20 +69,28 @@ struct ChunkInfo request_memory(int n) {
     exit(1);
   }
   fencepost_start = head;
-  fencepost_start->allocated = 1;
-  fencepost_start->size = kMetadataSize;
+  // fencepost_start->allocated = 1;
+  // fencepost_start->size = kMetadataSize;
+  set_block_size(fencepost_start, kMetadataSize);
+  set_allocated(fencepost_start, 1);
 
   free_list_start = ADD_BYTES(fencepost_start, kMetadataSize);
-  free_list_start->allocated = 0;
-  free_list_start->size = n * kAvailableSize;
+  // free_list_start->allocated = 0;
+  // free_list_start->size = n * kAvailableSize;
+  set_block_size(free_list_start, n * kAvailableSize);
+  set_allocated(free_list_start, 0);
 
   linker = get_linker(free_list_start);
   linker->next = NULL;
   linker->prev = NULL;
 
-  fencepost_end = ADD_BYTES(free_list_start, free_list_start->size);
-  fencepost_end->size = kMetadataSize;
-  fencepost_end->allocated = 1;
+  // fencepost_end = ADD_BYTES(free_list_start, free_list_start->size);
+  fencepost_end = ADD_BYTES(free_list_start, block_size(free_list_start));
+  // fencepost_end->size = kMetadataSize;
+  // fencepost_end->allocated = 1;
+  set_block_size(fencepost_end, kMetadataSize);
+  set_allocated(fencepost_end, 1);
+
 
   c.fencepost_start = fencepost_start;
   c.fencepost_end = fencepost_end;
@@ -112,7 +120,8 @@ Block *find_free_block(size_t size) {
   while (start != NULL && start != free_list_tail) {
     Block *cur_block = ptr_to_block(start);
     if (is_free(cur_block) && block_size(cur_block) >= size) {
-      if (cur_block->size < best_fit) {
+      // if (cur_block->size < best_fit) {
+      if (block_size(cur_block) < best_fit) {
         best_fit = block_size(cur_block);
         best = start;
       }
@@ -138,31 +147,43 @@ void insert_free_list(Block *block) {
 
 Block *split_block(Block *block, size_t size) {
 
-  size_t remain_size = block->size - size;
-  block->size = remain_size;
-  block->allocated = 0;
+  // size_t remain_size = block->size - size;
+  size_t remain_size = block_size(block) - size;
+  // block->size = remain_size;
+  // block->allocated = 0;
+  set_block_size(block, remain_size);
+  set_allocated(block, 0);
 
   Block *footer = get_footer((Block*)block, remain_size);
   
   if (remain_size >= 2 * kMetadataSize + kMinAllocationSize + kLinkMetadataSize) {
     insert_free_list(block);
-    footer->allocated = 0;
-    footer->size = remain_size;
+    // footer->allocated = 0;
+    // footer->size = remain_size;
+    set_block_size(footer, remain_size);
+    set_allocated(footer, 0);
   } else {
-    block->allocated = 1;
-    footer->allocated = 1;
-    footer->size = remain_size;
+    // block->allocated = 1;
+    // footer->allocated = 1;
+    // footer->size = remain_size;
+    set_allocated(block, 1);
+    set_allocated(footer, 1);
+    set_block_size(footer, remain_size);
   }
 
   Block* right = get_next_block(block);
-  right->size = size;
-  right->allocated = 1;
+  // right->size = size;
+  // right->allocated = 1;
+  set_block_size(right, size);
+  set_allocated(right, 1);
   void *payload_ptr = ADD_BYTES(right, kMetadataSize);
 
   // memset(payload_ptr, 0, size - 2 * kMetadataSize);
   Block *footer_allocate = get_footer(right, size);
-  footer_allocate->allocated = 1; 
-  footer_allocate->size = size;
+  // footer_allocate->allocated = 1; 
+  // footer_allocate->size = size;
+  set_block_size(footer_allocate, size);
+  set_allocated(footer_allocate, 1);
   return payload_ptr;
 }
 
@@ -174,21 +195,29 @@ void coalesce_adjacent_blocks(Block *free_block) {
   if ((prev_block == NULL && is_valid_block(free_block)) || (next_block == NULL && is_valid_block(free_block))) {
     Block* footer = NULL;
     footer = get_footer(free_block, block_size(free_block));
-    footer->allocated = 0;
-    footer->size = block_size(free_block);
-    free_block->allocated = 0;
-    free_block->size = block_size(free_block);
+    // footer->allocated = 0;
+    // footer->size = block_size(free_block);
+    set_allocated(footer, 0);
+    set_block_size(footer, block_size(free_block));
+    // free_block->allocated = 0;
+    // free_block->size = block_size(free_block);
+    set_allocated(free_block, 0);
+    set_block_size(free_block, block_size(free_block));
     insert_free_list(free_block);
     return;
   }
 
   if (prev_block && !is_free(prev_block) && next_block && !is_free(next_block)) {
-    free_block->allocated = 0;
-    free_block->size = block_size(free_block);
+    // free_block->allocated = 0;
+    // free_block->size = block_size(free_block);
+    set_allocated(free_block, 0);
+    set_block_size(free_block, block_size(free_block));
     insert_free_list(free_block);
     Block* footer = get_footer(free_block, block_size(free_block));
-    footer->allocated = 0;
-    footer->size = block_size(free_block);
+    // footer->allocated = 0;
+    // footer->size = block_size(free_block);
+    set_allocated(footer, 0);
+    set_block_size(footer, block_size(free_block));
     
   } else if (prev_block && is_free(prev_block) && next_block && is_free(next_block)) {
     Block* new_head = NULL;
@@ -196,35 +225,48 @@ void coalesce_adjacent_blocks(Block *free_block) {
     splice_out_block(prev_block);
     splice_out_block(next_block);
     new_head = prev_block;
-    new_head->allocated = 0;
-    new_head->size = coalesce_size;
+    // new_head->allocated = 0;
+    // new_head->size = coalesce_size;
+    set_allocated(new_head, 0);
+    set_block_size(new_head, coalesce_size);
     insert_free_list(new_head);
-    Block* footer = get_footer(new_head, new_head->size);
-    footer->allocated = 0;
-    footer->size = coalesce_size;
+    Block* footer = get_footer(new_head, block_size(new_head));
+    // footer->allocated = 0;
+    // footer->size = coalesce_size;
+    set_allocated(footer, 0);
+    set_block_size(footer, coalesce_size);
 
   } else if (next_block && is_free(next_block)) {
     Block* new_head = NULL;
     size_t coalesce_size = block_size(free_block) + block_size(next_block);
     splice_out_block(next_block);
     new_head = free_block;
-    new_head->allocated = 0;
-    new_head->size = coalesce_size;
+    // new_head->allocated = 0;
+    // new_head->size = coalesce_size;
+    set_allocated(new_head, 0);
+    set_block_size(new_head, coalesce_size);
     insert_free_list(new_head);
-    Block* footer = get_footer(new_head, new_head->size);
-    footer->allocated = 0;
-    footer->size = coalesce_size;
+    Block* footer = get_footer(new_head, block_size(new_head));
+    // footer->allocated = 0;
+    // footer->size = coalesce_size;
+    set_allocated(footer, 0);
+    set_block_size(footer, coalesce_size);
   } else if (prev_block && is_free(prev_block)) {
     Block* new_head = NULL;
     size_t coalesce_size = block_size(free_block) + block_size(prev_block);
     splice_out_block(prev_block);
     new_head = prev_block;
-    new_head->allocated = 0;
-    new_head->size = coalesce_size;
+    // new_head->allocated = 0;
+    // new_head->size = coalesce_size;
+    set_allocated(new_head, 0);
+    set_block_size(new_head, coalesce_size);
     insert_free_list(new_head);
-    Block* footer = get_footer(new_head, new_head->size);
-    footer->allocated = 0;
-    footer->size = coalesce_size;
+    Block* footer = get_footer(new_head, block_size(new_head));
+    // footer->allocated = 0;
+    // footer->size = coalesce_size;
+    set_allocated(footer, 0);
+    set_block_size(footer, coalesce_size);
+
   }
 
 }
@@ -294,14 +336,19 @@ void *my_malloc(size_t size) {
   if (block_size(free_block) <= (alloc_size + kMetadataSize + kMinAllocationSize)){
     // remove_from_free_list(free_block);
     Block *cur_allocated_block = free_block;
-    cur_allocated_block->allocated = 1;
-    cur_allocated_block->size = block_size(free_block);
-    free_block->allocated = 1;
+    set_allocated(cur_allocated_block, 1);
+    set_block_size(cur_allocated_block, block_size(free_block));
+    // cur_allocated_block->allocated = 1;
+    // cur_allocated_block->size = block_size(free_block);
+    // free_block->allocated = 1;
+    set_allocated(free_block, 1);
     void *payload_ptr = ADD_BYTES(free_block, kMetadataSize);
     // memset(payload_ptr, 0, size);
     Block *footer = get_footer(free_block, block_size(free_block));
-    footer->allocated = 1;
-    footer->size = block_size(free_block);
+    // footer->allocated = 1;
+    set_allocated(footer, 1);
+    set_block_size(footer, block_size(free_block));
+    // footer->size = block_size(free_block);
     return payload_ptr;
   }
 
@@ -339,15 +386,27 @@ void my_free(void *ptr) {
  *  purposes. Depending on the optimisations you implement, you will need to
  *  update these functions yourself.
  **/
+void set_allocated(Block *block, int allocated) {
+  if (allocated) {
+    block->size |= ALLOCATED_MASK;
+  } else {
+    block->size &= ~ALLOCATED_MASK;
+  }
+}
 
 /* Returns 1 if the given block is free, 0 if not. */
 int is_free(Block *block) {
-  return !block->allocated;
+  // return !block->allocated;
+  return (block->size & ALLOCATED_MASK) == 0;
 }
 
+void set_block_size(Block* block, size_t new_size) {
+  block->size = (block->size & ALLOCATED_MASK) | (new_size & SIZE_MASK);
+}
 /* Returns the size of the given block */
 size_t block_size(Block *block) {
-  return block->size;
+  // return block->size;
+  return block->size & SIZE_MASK;
 }
 
 /* Returns the first block in memory (excluding fenceposts) */
@@ -385,7 +444,7 @@ Block *get_prev_block(Block *block) {
     return NULL;
   }
   Block *footer = ADD_BYTES(block, -((size_t) kMetadataSize));
-  Block *prev_block = ADD_BYTES(block, -((size_t)footer->size));
+  Block *prev_block = ADD_BYTES(block, -((size_t)block_size(footer)));
   struct ChunkInfo c = get_cur_chunk(block);
   if (prev_block < ADD_BYTES(c.fencepost_start, kMetadataSize)) {
     return NULL;
@@ -400,13 +459,11 @@ Block *ptr_to_block(void *ptr) {
 }
 
 Block *get_footer(void* ptr, size_t alloc_size) {
-    void* end_ptr = ADD_BYTES(ptr, alloc_size);
-    return ADD_BYTES(end_ptr, -((size_t) kMetadataSize));
+  void* end_ptr = ADD_BYTES(ptr, alloc_size);
+  return ADD_BYTES(end_ptr, -((size_t) kMetadataSize));
 }
 
 Linker *get_linker(Block* block) {
   Linker* link = ADD_BYTES(block, kMetadataSize);
   return link;
 }
-
-

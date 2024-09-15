@@ -19,6 +19,9 @@
 
 #define ADD_BYTES(ptr, n) ((void *) (((char *) (ptr)) + (n)))
 
+#define ALLOCATED_MASK ((size_t)1)
+#define SIZE_MASK (~ALLOCATED_MASK)
+
 /** This is the Block struct, which contains all metadata needed for your 
  *  explicit free list. You are allowed to modify this struct (and will need to 
  *  for certain optimisations) as long as you don't move the definition from 
@@ -39,7 +42,7 @@ typedef struct Linker Linker;
 
 struct Block {
     size_t size;
-    bool allocated;
+    // bool allocated;
 };
 
 struct Linker {
@@ -99,7 +102,9 @@ void *my_malloc(size_t size);
 void my_free(void *p);
 
 /* Helper functions you are required to implement for internal testing. */
+void set_allocated(Block* block, int allocated);
 int is_free(Block *block);
+void set_block_size(Block* block, size_t new_size);
 size_t block_size(Block *block);
 
 Block *get_start_block(void); 
