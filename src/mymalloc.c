@@ -22,7 +22,10 @@ Block *cur_free_block = NULL;
 static int is_requested_memory = 0;
 
 static struct ChunkInfo chunk_arr[128];
-static int chunk_idx = 0;
+int chunk_idx = 0;
+
+size_t kHeapSize = 0ull;
+// static int chunk_idx = 0;
 
 Block *cur_fencepost_start = NULL, *cur_fencepost_end = NULL;
 
@@ -79,7 +82,7 @@ struct ChunkInfo request_memory(int n) {
   // free_list_start->size = n * kAvailableSize;
   set_block_size(free_list_start, n * kAvailableSize);
   set_allocated(free_list_start, 0);
-
+  kHeapSize += n * kMemorySize;
   linker = get_linker(free_list_start);
   linker->next = NULL;
   linker->prev = NULL;

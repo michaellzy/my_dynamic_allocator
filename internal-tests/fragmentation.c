@@ -10,9 +10,14 @@
 // By default they are quite small to help you test your code.
 #define REPTS 1000
 #define NUM_PTRS 100
-#define MAX_ALLOC_SIZE 4096 
+#define MAX_ALLOC_SIZE 4096
+#define FACTOR 1ull << 20
+
 
 char *ptrs[NUM_PTRS];
+
+size_t aggregate_payload = 0;
+size_t peak_payload = 0;
 
 /* Returns a random number between min and max (inclusive) */
 int random_in_range(int min, int max) {
@@ -24,15 +29,22 @@ void random_allocations() {
   for (int i = 0; i < REPTS; i++) {
     int idx = random_in_range(0, NUM_PTRS-1);
     if (ptrs[idx] == NULL) {
-      printf("%d\n", i);
       size_t random_size = (size_t) random_in_range(0, MAX_ALLOC_SIZE);
-      printf("random allocated: %d\n", random_size);
       ptrs[idx] = my_malloc(random_size);
+      if (ptrs[idx] != NULL) {
+        Block* allocated_block = ptr_to_block(ptrs[idx]);
+        size_t cur_size = block_size(allocated_block);
+        aggregate_payload += cur_size;
+        if (aggregate_payload > peak_payload) {
+          peak_payload = aggregate_payload;
+        }
+      }
     } else {
-      printf("%d\n", i);
-      printf("random freed: %d\n", ptrs[idx]);
-      my_free(ptrs[idx]);
+      Block *free_block = ptr_to_block(ptrs[idx]);
+      size_t free_block_size = block_size(free_block);
+      aggregate_payload -= free_block_size;
       ptrs[idx] = NULL;
+      my_free(ptrs[idx]);
     }
   }
 }
@@ -55,6 +67,8 @@ int main(int argc, char const *argv[]) {
   random_allocations(); 
 
   /* TODO: put your code to measure and report memory fragmentation here */
-
+  size_t heap_size = kHeapSize;
+  double peak_mem_uti = (peak_payload * FACTOR) / heap_size;
+  fprintf(stderr, "Peak memory utilization: %f\n", peak_mem_uti);
   return 0;
 }

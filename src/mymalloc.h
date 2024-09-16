@@ -82,6 +82,7 @@ extern const size_t kMemorySize;
 
 extern const size_t kAllocatedMetadataSize;
 extern const size_t kFreeMetadataSize;
+extern size_t kHeapSize;
 
 void initialize();
 int get_chunk_size(size_t alloc_size);
